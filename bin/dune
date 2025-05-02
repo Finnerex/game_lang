@@ -1,0 +1,16 @@
+(executable
+ (public_name game_lang)
+ (name main)
+ (libraries
+  game_lang
+  llvm
+  llvm.analysis
+  llvm.executionengine
+  llvm.target
+  llvm.all_backends))
+
+(ocamllex lexer)
+(menhir
+ (modules parser)
+ (infer true)
+)

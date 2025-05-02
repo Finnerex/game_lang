@@ -1,0 +1,12 @@
+int main(int balls) {
+    int i = 12 + 2123492;
+
+    {
+        int jaws = balls + i;
+
+        bool b = i < i+1;
+    }
+
+
+    return 0;
+}

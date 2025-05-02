@@ -1,0 +1,85 @@
+type token =
+    WHILE
+  | TVOID
+  | TSTRING
+  | TINT
+  | TIMES
+  | TFLOAT
+  | TCHAR
+  | TBOOL
+  | STRING_LIT of string
+  | RPAREN
+  | RETURN
+  | RBRACKET
+  | RBRACE
+  | QUESTION_MARK
+  | PLUS
+  | OR
+  | NOT_EQUALS
+  | NOT
+  | NEW
+  | MINUS
+  | LPAREN
+  | LESS_EQ
+  | LESS
+  | LBRACKET
+  | LBRACE
+  | INT_LIT of int
+  | INCREMENT
+  | IF
+  | IDENT of string
+  | GREATER_EQ
+  | GREATER
+  | FOR
+  | FLOAT_LIT of float
+  | EOF
+  | ENDLINE
+  | ELSE
+  | DOT
+  | DO
+  | DIV
+  | DECREMENT
+  | COMMA
+  | COLON
+  | CLASS
+  | BOOL_LIT of bool
+  | BOOL_EQUALS
+  | ASSIGN_TIMES
+  | ASSIGN_PLUS
+  | ASSIGN_MINUS
+  | ASSIGN_EQUALS
+  | ASSIGN_DIV
+  | ARROW
+  | AND
+  | ACCESS of Ast.access_modifier
+val menhir_begin_marker : int
+val xv_var : Ast.var
+val xv_typ : Ast.typ
+val xv_statement : Ast.statement
+val xv_separated_nonempty_list_COMMA_expression_ : Ast.expression list
+val xv_separated_nonempty_list_COMMA___anonymous_0_ : (Ast.typ * string) list
+val xv_separated_list_COMMA_expression_ : Ast.expression list
+val xv_separated_list_COMMA___anonymous_0_ : (Ast.typ * string) list
+val xv_primitive_type : Ast.typ
+val xv_option_expression_ : Ast.expression option
+val xv_option_ACCESS_ : Ast.access_modifier option
+val xv_math_expression : Ast.expression
+val xv_main : Ast.statement list
+val xv_loption_separated_nonempty_list_COMMA_expression__ :
+  Ast.expression list
+val xv_loption_separated_nonempty_list_COMMA___anonymous_0__ :
+  (Ast.typ * string) list
+val xv_literal : Ast.expression
+val xv_list_statement_ : Ast.statement list
+val xv_list_classlevel_definition_ : Ast.statement list
+val xv_input_params : Ast.expression list
+val xv_incr_decr : Ast.expression
+val xv_incomplete_statement : Ast.statement
+val xv_function_call : Ast.expression
+val xv_expression : Ast.expression
+val xv_define_params : (Ast.typ * string) list
+val xv_classlevel_definition : Ast.statement
+val xv_class_definition : Ast.statement
+val xv_array_literal : Ast.expression
+val xv___anonymous_0 : Ast.typ * string
+val menhir_end_marker : int
