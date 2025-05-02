@@ -13,7 +13,9 @@ let () =
   try
    let result = Parser.main Lexer.token lexbuf in
 
-   let _ = codegen_scope result (* PrgmSt.empty *) TVoid in
+    let initial_state = PrgmSt.push_stack PrgmSt.empty in
+
+   let _ = codegen_scope result initial_state TVoid in
    (* let _ = codegen_expr result PrgmSt.empty in *)
    let oc = if Array.length(Sys.argv) > 2 then open_out Sys.argv.(2) else stdout in
    Printf.fprintf oc "\n%s\n\n" (Llvm.string_of_llmodule the_module);
