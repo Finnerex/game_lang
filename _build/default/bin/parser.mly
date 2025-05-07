@@ -14,9 +14,9 @@
 
 // types
 
-%token TBOOL TINT TFLOAT TCHAR TSTRING TVOID 
+%token TBOOL TINT TFLOAT TCHAR TSTRING TVOID TOBJECT
 
-%token <Ast.access_modifier> ACCESS 
+%token <Ast.modifier> MODIFIER 
 %token CLASS
 %token NEW
 
@@ -29,6 +29,7 @@
 // control flow
 %token IF ELSE
 %token FOR WHILE DO
+%token BREAK CONTINUE
 
 // operators
 %token PLUS MINUS
@@ -88,10 +89,9 @@ main:
 
 
 class_definition: // returns statement
-| ACCESS? CLASS IDENT LBRACE list(classlevel_definition) RBRACE
+| list(MODIFIER) CLASS IDENT LBRACE list(classlevel_definition) RBRACE
     { ClassDefinition($1, $3, $5) }
 ;
-
 
 primitive_type: // kinda a bad system
 | TBOOL     { TBool }
@@ -100,11 +100,14 @@ primitive_type: // kinda a bad system
 | TCHAR     { TChar }
 | TSTRING   { TString }
 | TVOID     { TVoid } // idk if this is considered a prim
+| TOBJECT   { TObject }
 ;
 
 typ:
 | primitive_type    
     { $1 }
+| primitive_type TIMES
+    { TPointer($1) }
 | typ LBRACKET RBRACKET 
     { TArray($1) }
 | IDENT
@@ -113,19 +116,19 @@ typ:
 
 
 classlevel_definition:
-| ACCESS? typ IDENT ASSIGN_EQUALS expression 
+| list(MODIFIER) typ IDENT ASSIGN_EQUALS expression 
     { VarDefinition($1, $2, $3, (Some $5)) }
 
-| ACCESS? typ IDENT ASSIGN_EQUALS array_literal // maybe this should actually be different
+| list(MODIFIER) typ IDENT ASSIGN_EQUALS array_literal // maybe this should actually be different
     { VarDefinition($1, $2, $3, (Some $5)) }
 
-| ACCESS? typ IDENT 
+| list(MODIFIER) typ IDENT 
     { VarDefinition($1, $2, $3, None) }
 
-| ACCESS? typ IDENT LPAREN define_params RPAREN LBRACE list(statement) RBRACE 
+| list(MODIFIER) typ IDENT LPAREN define_params RPAREN LBRACE list(statement) RBRACE 
     { MethodDefinition($1, $2, $3, $5, $8) }
 
-| ACCESS? IDENT LPAREN define_params RPAREN LBRACE list(statement) RBRACE 
+| list(MODIFIER) IDENT LPAREN define_params RPAREN LBRACE list(statement) RBRACE 
     { ConstructorDefinition($1, $2, $4, $7) }
 
 | class_definition
@@ -159,26 +162,26 @@ array_literal:
 
 incomplete_statement:
 | typ IDENT ASSIGN_EQUALS expression
-    { VarDefinition(None, $1, $2, (Some $4)) } // maybe this should be different
+    { VarDefinition([], $1, $2, (Some $4)) } // maybe this should be different
 
 | typ IDENT ASSIGN_EQUALS array_literal // maybe this should actually be different
-    { VarDefinition(None, $1, $2, (Some $4)) }
+    { VarDefinition([], $1, $2, (Some $4)) }
 
 | typ IDENT 
-    { VarDefinition(None, $1, $2, None) }
+    { VarDefinition([], $1, $2, None) }
 
 | var ASSIGN_EQUALS expression
     { Assign($1, $3) }
 
 
 | var ASSIGN_PLUS expression
-    { Assign($1, Add($3, Access $1))}
+    { Assign($1, Add(Access $1, $3))}
 | var ASSIGN_MINUS expression
-    { Assign($1, Sub($3, Access $1))}
+    { Assign($1, Sub(Access $1, $3))}
 | var ASSIGN_TIMES expression
-    { Assign($1, Mul($3, Access $1))}
+    { Assign($1, Mul(Access $1, $3))}
 | var ASSIGN_DIV expression
-    { Assign($1, Div($3, Access $1))}
+    { Assign($1, Div(Access $1, $3))}
 
 | incr_decr
     { ExpressionStatement($1) }
@@ -211,6 +214,11 @@ statement: // returns statement
     { While($3, $5)}
 | DO statement WHILE LPAREN expression RPAREN
     { DoWhile($5, $2)}
+
+| BREAK ENDLINE
+    { Break }
+| CONTINUE ENDLINE
+    { Continue }
 ;
 
 
@@ -308,7 +316,8 @@ incr_decr:
 // | INCREMENT var
 //     { PreIncrement($2) }
 | var DECREMENT
-    { PostDecrement($1) }
+    { PreIncrement($1) } /* todo change and make work */
+    // { PostDecrement($1) }
 // | DECREMENT var
 //     { PreDecrement($2) }
 

@@ -1,0 +1,51 @@
+define void @tailrecursive(i32 %a) {
+entry:
+  %letmp = icmp sle i32 %a, 0
+  br i1 %letmp, label %then, label %endif
+
+then:                                             ; preds = %entry
+  ret void
+
+endif:                                            ; preds = %then, %entry
+  %subtmp = sub i32 %a, 1
+  call void @tailrecursive(i32 %subtmp)
+  ret void
+}
+
+------------------------------------------ vs
+
+define void @tailrecursive(i32 %a) {
+entry:
+  %a1 = alloca i32, align 4             ;-
+  store i32 %a, ptr %a1, align 4        ;-
+  %a2 = load i32, ptr %a1, align 4      ;-
+  %letmp = icmp sle i32 %a2, 0
+  br i1 %letmp, label %then, label %endif
+
+then:                                             ; preds = %entry
+  ret void
+  br label %endif                       ;-
+
+endif:                                            ; preds = %then, %entry
+  %a3 = load i32, ptr %a1, align 4      ;-
+  %subtmp = sub i32 %a3, 1
+  call void @tailrecursive(i32 %subtmp)
+  ret void
+}
+
+------------------------------------ from this
+
+void tailrecursive(int a) {
+    if (a <= 0)
+        return;
+
+    tailrecursive(a - 1);
+}
+
+
+Optimize with 
+
+opt -O2 program.ll -o optimized.bc
+llvm-dis optimized.bc -o -
+
+would be cool if i could do this in the compiler, as well as the other steps that are in the bash script

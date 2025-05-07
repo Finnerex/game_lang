@@ -5,6 +5,7 @@ type token =
   | WHILE
   | TVOID
   | TSTRING
+  | TOBJECT
   | TINT
   | TIMES
   | TFLOAT
@@ -21,6 +22,7 @@ type token =
   | NOT_EQUALS
   | NOT
   | NEW
+  | MODIFIER of (Ast.modifier)
   | MINUS
   | LPAREN
   | LESS_EQ
@@ -42,9 +44,11 @@ type token =
   | DO
   | DIV
   | DECREMENT
+  | CONTINUE
   | COMMA
   | COLON
   | CLASS
+  | BREAK
   | BOOL_LIT of (bool)
   | BOOL_EQUALS
   | ASSIGN_TIMES
@@ -54,7 +58,6 @@ type token =
   | ASSIGN_DIV
   | ARROW
   | AND
-  | ACCESS of (Ast.access_modifier)
 
 (* This exception is raised by the monolithic API functions. *)
 

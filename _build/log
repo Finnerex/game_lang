@@ -1,4 +1,4 @@
-# dune exec game_lang test.txt
+# dune exec game_lang test.txt output.ll
 # OCAMLPARAM: unset
 # Shared cache: enabled-except-user-rules
 # Shared cache location: /root/.cache/dune/db
@@ -13,4 +13,4 @@
 #  ; build_dir = In_build_dir "default"
 #  ; instrument_with = []
 #  }
-$ /root/.opam/5.2.0/bin/ocamlc.opt -config > /tmp/dune_d0e4e9_output
+$ /root/.opam/5.2.0/bin/ocamlc.opt -config > /tmp/dune_8aad28_output

@@ -1,8 +1,9 @@
 
-type access_modifier =
+type modifier =
 | Public
 | Private
 | Protected
+| Extern
 
 type typ = 
 | TBool
@@ -11,6 +12,8 @@ type typ =
 | TChar
 | TString
 | TVoid
+| TObject
+| TPointer of typ
 | TArray of typ
 | TCustom of string
 
@@ -63,15 +66,15 @@ type statement =
 
 | ExpressionStatement of expression (* for throwing things away (function calls mainly but maybe other things) *)
 
-(* modifier, name, methods and fields (maybe should be separate), maybe make the kind of statement more specific idk *)
-| ClassDefinition of (access_modifier option) * string * (statement list)
-(* modifier, type, name, params, body *)
-| MethodDefinition of (access_modifier option) * typ * string * ((typ * string) list) * (statement list)
-| ConstructorDefinition of (access_modifier option) * string * ((typ * string) list) * (statement list)
+(* modifiers, name, methods and fields (maybe should be separate), maybe make the kind of statement more specific idk *)
+| ClassDefinition of (modifier list) * string * (statement list)
+(* modifiers, type, name, params, body *)
+| MethodDefinition of (modifier list) * typ * string * ((typ * string) list) * (statement list)
+| ConstructorDefinition of (modifier list) * string * ((typ * string) list) * (statement list)
 
 | Return of expression option
 
-| VarDefinition of (access_modifier option) * typ * string * (expression option)
+| VarDefinition of (modifier list) * typ * string * (expression option)
 | Assign of var * expression
 
 | If of expression * statement * (statement option)
@@ -79,4 +82,7 @@ type statement =
 | For of statement * expression * statement * statement
 | While of expression * statement
 | DoWhile of expression * statement (* maybe this doesnt need to happen *)
+
+| Break
+| Continue
 

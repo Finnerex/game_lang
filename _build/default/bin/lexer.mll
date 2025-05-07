@@ -21,9 +21,11 @@ rule token = parse
 
 | '"'           { Buffer.clear string_buf; str lexbuf; STRING_LIT (Buffer.contents string_buf) }
 
-| "public"      { ACCESS (Public) }
-| "private"     { ACCESS (Private) }
-| "protected"   { ACCESS (Protected) }
+| "public"      { MODIFIER (Public) }
+| "private"     { MODIFIER (Private) }
+| "protected"   { MODIFIER (Protected) }
+
+| "extern"      { MODIFIER (Extern) }
 
 | "class"       { CLASS }
 | "new"         { NEW }
@@ -39,12 +41,18 @@ rule token = parse
 | "float"       { TFLOAT }
 | "string"      { TSTRING }
 | "void"        { TVOID }
+| "object"      { TOBJECT }
 
 | "if"          { IF }
 | "else"        { ELSE }
 | "for"         { FOR }
 | "while"       { WHILE }
 | "do"          { DO }
+| "break"       { BREAK }
+| "continue"    { CONTINUE }
+
+| "++"          { INCREMENT }
+| "--"          { DECREMENT }
 
 | '+'           { PLUS }
 | '/'           { DIV }
@@ -56,9 +64,6 @@ rule token = parse
 | "-="          { ASSIGN_MINUS }
 | "*="          { ASSIGN_TIMES }
 | "/="          { ASSIGN_DIV }
-
-| "++"          { INCREMENT }
-| "--"          { DECREMENT }
 
 | "true"        { BOOL_LIT true }
 | "false"       { BOOL_LIT false }

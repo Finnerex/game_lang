@@ -1,14 +1,8 @@
-int main(int balls) {
-    int i = 12 + 2123492;
 
-    {
-        int jaws = balls + i;
+int main() {
 
-        bool b = i < i+1;
-    }
+    int a = 120;
+    a -= 5;
 
-    // bool b1 = !b;
-
-
-    return 0;
+    return a;
 }
