@@ -49,3 +49,20 @@ opt -O2 program.ll -o optimized.bc
 llvm-dis optimized.bc -o -
 
 would be cool if i could do this in the compiler, as well as the other steps that are in the bash script
+
+
+int a = 0;
+
+a = switch (a) 
+| 0, 5 -> a++
+| 1 -> method(a - 30)
+| 2 -> a + a * a + 120
+;
+
+switch (a)
+| 0 ->
+    {
+        a = 120 + method(239);
+        a -= 20;
+    }
+| 2 -> for (int i; i < 102; i++) a *= 2;

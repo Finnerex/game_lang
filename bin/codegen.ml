@@ -1,36 +1,9 @@
 
 open Ast
 open State
-
-exception Unimplemented
-exception TypeMismatch
-exception CompileError of string
-exception FatalError of string
-
-let context = Llvm.global_context ()
-let the_module = Llvm.create_module context "main"
-let builder = Llvm.builder context
-
-(* type defs? *)
-let i32 = Llvm.i32_type context
-let bool = Llvm.i1_type context
-let float = Llvm.float_type context
-let void = Llvm.void_type context
+open Util
 
 [@@@ocaml.warning "-26-27" ] (* suppress unused during development bc its annoying *)
-
-let to_lltype = function
-| TVoid -> void
-| TBool -> bool
-| TInt -> i32
-| TFloat -> float
-| TPointer _ -> Llvm.pointer_type context
-(* | TCustom _ -> struct (??) *)
-| _ -> raise (FatalError "no lltype exists for this type")
-
-
-(* a better promotion system will have to be devised *)
-let promote_to_float a b = (Llvm.build_sitofp a float "tmpfloat" builder, Llvm.build_sitofp b float "tmpfloat" builder)
 
 let rec codegen_expr (e:expression) (state:PrgmSt.t) : Llvm.llvalue * typ =
   match e with
@@ -42,9 +15,10 @@ let rec codegen_expr (e:expression) (state:PrgmSt.t) : Llvm.llvalue * typ =
   | Array(vals) -> raise Unimplemented
 
   | Add(a, b) -> codegen_arithmetic_op ~i:Llvm.build_add ~f:Llvm.build_fadd a b "addtmp" state
-  | Sub(a, b) -> codegen_arithmetic_op ~i:Llvm.build_sub ~f:Llvm.build_fadd a b "subtmp" state (* what the helly *)
+  | Sub(a, b) -> codegen_arithmetic_op ~i:Llvm.build_sub ~f:Llvm.build_fadd a b "subtmp" state
   | Mul(a, b) -> codegen_arithmetic_op ~i:Llvm.build_mul ~f:Llvm.build_fmul a b "multmp" state
   | Div(a, b) -> codegen_arithmetic_op ~i:Llvm.build_sdiv ~f:Llvm.build_fdiv a b "divtmp" state
+  | Mod(a, b) -> codegen_arithmetic_op ~i:Llvm.build_srem ~f:Llvm.build_frem a b "modtmp" state
 
   | And(a, b) -> codegen_bool_op ~f:Llvm.build_and a b "andtmp" state
   | Or(a, b)  -> codegen_bool_op ~f:Llvm.build_or a b "ortmp" state
@@ -68,7 +42,7 @@ let rec codegen_expr (e:expression) (state:PrgmSt.t) : Llvm.llvalue * typ =
     Llvm.build_store incr value builder |> ignore; incr, t
 
 
-  | Ternary(condition, if_then, if_else) -> raise Unimplemented
+  | Ternary(condition, if_then, if_else) -> codegen_ternary condition if_then if_else state
 
   (* this will not work for op overloads or anything unless struct type *)
   (* this is also like bad because it will load it a bunch when it doesnt need to *)
@@ -76,11 +50,14 @@ let rec codegen_expr (e:expression) (state:PrgmSt.t) : Llvm.llvalue * typ =
 
   | FunctionCall(name, args) ->
     let arg_array = args |> Array.of_list |> Array.map (fun a -> codegen_expr a state) in
-    let expr_args = arg_array |> Array.map (fun a -> fst a) in (* should likely typecheck here *)
-    let (the_function, return_type) = PrgmSt.find_func state name in 
-    let func_type = arg_array |> Array.map (fun a -> a |> snd |> to_lltype) |> Llvm.function_type (to_lltype return_type) in
+    let arg_exprs, arg_ts = Array.split arg_array in
+
+    let mangled_name = mangle_method_name state.class_name name arg_ts in (* use enclosing class as the class name *)
+    let (the_function, return_type) = PrgmSt.find_func state mangled_name in 
+    
+    let func_type = arg_ts |> Array.map (fun a -> a |> to_lltype) |> Llvm.function_type (to_lltype return_type) in
     let tmp_name = if return_type = TVoid then "" else "calltmp" in
-    Llvm.build_call func_type the_function expr_args tmp_name builder, return_type
+    Llvm.build_call func_type the_function arg_exprs tmp_name builder, return_type
       
   
   | _ -> raise Unimplemented
@@ -116,22 +93,46 @@ and codegen_compare ~i ~f a b name state = (* me when i repeat myself *)
   | TInt, TInt -> i ea eb name builder
   | _ -> raise Unimplemented), TBool
 
+and codegen_ternary condition then_expr else_expr state = (* this file is getting a little ginormous *)
+let the_function = Llvm.block_parent (Llvm.insertion_block builder) in
+
+let cond_expr =
+  match codegen_expr condition state with
+  | v, TBool -> v
+  | _ -> raise (CompileError "if expression condition must evaluate to bool")
+in
+
+let then_block = Llvm.append_block context "ternthen" the_function in
+let else_block = Llvm.append_block context "ternelse" the_function in
+let merge_block = Llvm.append_block context "endtern" the_function in 
+
+Llvm.build_cond_br cond_expr then_block else_block builder |> ignore;
+
+Llvm.position_at_end then_block builder;
+let then_val, then_t = codegen_expr then_expr state in
+Llvm.build_br merge_block builder |> ignore;
+
+Llvm.position_at_end else_block builder;
+let else_val, else_t = codegen_expr else_expr state in
+Llvm.build_br merge_block builder |> ignore; 
+
+if else_t <> then_t then raise (CompileError "Type mismatch") else ();
+
+Llvm.position_at_end merge_block builder;
+Llvm.build_phi [(then_val, then_block); (else_val, else_block)] "terntmp" builder, then_t
 
 
-let entry_block_alloca func name typ =
-  func |> Llvm.entry_block |> Llvm.instr_begin |> Llvm.builder_at context |> (* she line on my pipe til i ocam *)
-  Llvm.build_alloca (to_lltype typ) name
 
-(* gah i hate side effects and this func not having a return *)
-let rec codegen_statement (s:statement) (state:PrgmSt.t) (ctrl_state:CtrlSt.t) = 
+(* gah i hate side effects *)
+let rec codegen_statement (s:statement) (state:PrgmSt.t) = 
   match s with
-  | Scope(sl) -> let new_state = PrgmSt.push_stack state in codegen_scope sl new_state ctrl_state
+  | Scope(sl) -> let new_state = PrgmSt.push_stack state in codegen_scope sl new_state
   | ExpressionStatement(e) -> (codegen_expr e state) |> ignore; state (* might have a secondary thing for exprs with side effects *)
 
   | VarDefinition(_, t, name, value) -> 
     let parent_func = Llvm.block_parent (Llvm.insertion_block builder) in 
     let alloca = 
-      (match PrgmSt.find_var_opt state name with
+      (match PrgmSt.find_var_opt state.scopes name with
       | Some _ -> raise (CompileError "a variable with this name already exists")
       | None -> entry_block_alloca parent_func name t) in 
       PrgmSt.add_var state name (alloca, t) |> ignore;
@@ -148,38 +149,39 @@ let rec codegen_statement (s:statement) (state:PrgmSt.t) (ctrl_state:CtrlSt.t) =
     if var_type <> expr_type then raise (CompileError "variable type does not match assigned expression's type") else (* TODO: deal with promotion *)
     Llvm.build_store expr_value var_value builder |> ignore; state
 
-  | MethodDefinition(_, t, name, params, body) -> codegen_function t name params body state ctrl_state
+  | MethodDefinition(_, t, name, params, body) -> codegen_function t name params body state
 
   | Return(e) -> 
     (match e with 
     | Some v -> 
       let return_val, expr_type = codegen_expr v state in
-      if expr_type <> CtrlSt.get_fun_type ctrl_state then 
+      if expr_type <> state.function_ret_type then 
         raise (CompileError "returned expression does not match function return type") else
         Llvm.build_ret return_val builder
     | None ->
-      if CtrlSt.get_fun_type ctrl_state <> TVoid then
+      if state.function_ret_type <> TVoid then
         raise (CompileError "non void function must return an expression") else
         Llvm.build_ret_void builder) |> ignore; state
 
-  | If(condition, if_then, if_else) -> codegen_if condition if_then if_else ctrl_state state; state
+  | If(condition, if_then, if_else) -> codegen_if condition if_then if_else state; state
 
-  | For(init, condition, increment, body) -> codegen_for init condition increment body ctrl_state state; state
-  | While(_) -> raise Unimplemented
-  | DoWhile(_) -> raise Unimplemented
+  | For(init, condition, increment, body) -> codegen_for init condition increment body state; state
+  | While(condition, body) -> codegen_while condition body false state; state 
+  | DoWhile(condition, body) -> codegen_while condition body true state; state
 
-  | Break -> Llvm.build_br (CtrlSt.get_loop_end ctrl_state) builder |> ignore; state
+  | Break -> Llvm.build_br (PrgmSt.get_loop_break state) builder |> ignore; state
+  | Continue -> Llvm.build_br (PrgmSt.get_loop_cont state) builder |> ignore; state
 
   | _ -> raise Unimplemented
 
 
-and codegen_scope (scope:statement list) (state:PrgmSt.t) ctrl_state = 
+and codegen_scope (scope:statement list) (state:PrgmSt.t) = 
   match scope with
-  | x :: xs -> let new_state = codegen_statement x state ctrl_state in codegen_scope xs new_state ctrl_state
+  | x :: xs -> let new_state = codegen_statement x state in codegen_scope xs new_state
   | [] -> PrgmSt.pop_stack state
 
 
-and codegen_if condition if_then if_else ctrl_state state =
+and codegen_if condition if_then if_else state =
   let the_function = Llvm.block_parent (Llvm.insertion_block builder) in
 
   let cond_expr =
@@ -198,53 +200,82 @@ and codegen_if condition if_then if_else ctrl_state state =
   Llvm.build_cond_br cond_expr then_block else_block builder |> ignore;
 
   Llvm.position_at_end then_block builder;
-  codegen_statement if_then state ctrl_state |> ignore; (* i think i can ignore any state change *)
+  codegen_statement if_then state |> ignore; (* i think i can ignore any state change *)
   Llvm.build_br merge_block builder |> ignore;
 
   (match if_else with
   | None -> ()
   | Some el -> 
     (Llvm.position_at_end else_block builder;
-    codegen_statement el state ctrl_state |> ignore;
+    codegen_statement el state |> ignore;
     Llvm.build_br merge_block builder |> ignore)); 
 
   Llvm.position_at_end merge_block builder;
 
-and codegen_for init condition increment body ctrl_state state = 
+and codegen_for init condition increment body state = 
   let current_block = (Llvm.insertion_block builder) in
   let the_function = Llvm.block_parent current_block in
-
-  let pushed_state = PrgmSt.push_stack state in
-      
+    
   let cond_block = Llvm.append_block context "forcond" the_function in
   let start_block = Llvm.append_block context "for" the_function in
+  let increment_block = Llvm.append_block context "forinc" the_function in
   let end_block = Llvm.append_block context "endfor" the_function in
 
-  let new_ctrl_st = CtrlSt.push_loop ctrl_state cond_block end_block in
+  let new_state = PrgmSt.push_stack state in
+  let new_state = PrgmSt.set_loop_blocks new_state end_block increment_block in
 
   Llvm.position_at_end current_block builder;
-  codegen_statement init pushed_state new_ctrl_st |> ignore;
+  codegen_statement init new_state |> ignore;
   Llvm.build_br cond_block builder |> ignore;
   
   Llvm.position_at_end cond_block builder;
   let cond_expr =
-    match codegen_expr condition pushed_state with
+    match codegen_expr condition new_state with
     | v, TBool -> v
     | _ -> raise (CompileError "for loop condition must evaluate to bool")
   in
   Llvm.build_cond_br cond_expr start_block end_block builder |> ignore;
 
   Llvm.position_at_end start_block builder;
-  codegen_statement body pushed_state new_ctrl_st |> ignore;
-  codegen_statement increment pushed_state new_ctrl_st |> ignore;
-  Llvm.build_br cond_block builder |> ignore;
+  codegen_statement body new_state |> ignore;
+  Llvm.build_br increment_block builder |> ignore;
 
-  CtrlSt.pop_loop new_ctrl_st |> ignore;
+  Llvm.position_at_end increment_block builder;
+  codegen_statement increment new_state |> ignore;
+  Llvm.build_br cond_block builder |> ignore;
 
   Llvm.position_at_end end_block builder;
   
 
-and codegen_function return_type name (params:(typ * string) list) body state ctrl_state =
+and codegen_while condition body is_do state =
+  let current_block = (Llvm.insertion_block builder) in
+  let the_function = Llvm.block_parent current_block in
+
+  let cond_block = Llvm.append_block context "whilecond" the_function in
+  let start_block = Llvm.append_block context "while" the_function in
+  let end_block = Llvm.append_block context "endwhile" the_function in
+
+  let new_state = PrgmSt.set_loop_blocks state end_block cond_block in
+
+  Llvm.position_at_end current_block builder;
+  Llvm.build_br (if is_do then start_block else cond_block) builder |> ignore;
+
+  Llvm.position_at_end cond_block builder;
+  let cond_expr =
+    match codegen_expr condition new_state with
+    | v, TBool -> v
+    | _ -> raise (CompileError "while loop condition must evaluate to bool")
+  in
+  Llvm.build_cond_br cond_expr start_block end_block builder |> ignore;
+
+  Llvm.position_at_end start_block builder;
+  codegen_statement body new_state |> ignore;
+  Llvm.build_br cond_block builder |> ignore;
+
+  Llvm.position_at_end end_block builder;
+
+
+and codegen_function return_type name (params:(typ * string) list) body state =
   
   let the_function = codegen_function_decl return_type name params state in
 
@@ -260,7 +291,8 @@ and codegen_function return_type name (params:(typ * string) list) body state ct
   ) params;
 
   let new_state = PrgmSt.push_stack state in 
-  let final_state = codegen_scope body new_state (CtrlSt.set_fun_type ctrl_state return_type) in
+  let new_state = PrgmSt.set_fun_type new_state return_type in
+  let final_state = codegen_scope body new_state in
   (* List.iter (fun s -> codegen_statement s state return_type) body; *)
 
   (* this should actually just cause a compile error unless void *)
@@ -271,18 +303,21 @@ and codegen_function return_type name (params:(typ * string) list) body state ct
   final_state
 
 and codegen_function_decl return_type name (params:(typ * string) list) state = 
-  let param_types = Array.of_list (List.map (fun p -> p |> fst |> to_lltype) params) in
+  let param_ts = Array.of_list (List.map (fun p -> fst p) params) in
+  let mangled_name = mangle_method_name state.class_name name param_ts in 
+
+  let param_types = Array.map (fun p -> p |> to_lltype) param_ts in
   let func_type = Llvm.function_type (to_lltype return_type) param_types in
-  (* let mangled_name = name ^ Array.fold_left (fun last t -> last ^ "_" ^ (Llvm.string_of_lltype t)) "" param_types in *)
-  let the_function = Llvm.declare_function name func_type the_module in
+  
+  let the_function = Llvm.declare_function mangled_name func_type the_module in
 
   (* TODO: will have to check for existing declarations *)
-  PrgmSt.add_func state name (the_function, return_type) |> ignore;
+  PrgmSt.add_func state mangled_name (the_function, return_type) |> ignore;
   the_function
 
 
   (* returns a state associated with the given class (as a list of method and var defs) *)
-let rec collect_class (sl:statement list) (state:PrgmSt.t) : PrgmSt.t =
+and collect_class (sl:statement list) (state:PrgmSt.t) : PrgmSt.t =
   match sl with
   | [] -> state
   | x :: xs -> 
@@ -290,3 +325,12 @@ let rec collect_class (sl:statement list) (state:PrgmSt.t) : PrgmSt.t =
     | MethodDefinition(_, t, name, params, _) -> codegen_function_decl t name params state |> ignore; collect_class xs state
     | VarDefinition(_) -> raise Unimplemented
     | _ -> raise (FatalError "unexpected classlevel statement")
+
+
+and codegen_structure modifiers structure_type name body state =
+  match structure_type with
+  | Struct ->
+    let structure_state(* , fields *) = collect_class body state in (* idk bro *)
+    let struct_type = Llvm.named_struct_type context name in
+    Llvm.struct_set_body struct_type (* idk bruh oop is hard to make *)
+  | _ -> raise Unimplemented 

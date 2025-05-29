@@ -5,7 +5,6 @@
 }
 
 let blank = [' ' '\t' '\n' '\r']
-let symbol = ['A'-'Z' 'a'-'z']
 let digit = ['0'-'9']
 
 let ident = '_'* ['A'-'Z' 'a'-'z'] ['A'-'Z' 'a'-'z' '_' '0'-'9']*
@@ -21,18 +20,21 @@ rule token = parse
 
 | '"'           { Buffer.clear string_buf; str lexbuf; STRING_LIT (Buffer.contents string_buf) }
 
-| "public"      { MODIFIER (Public) }
-| "private"     { MODIFIER (Private) }
-| "protected"   { MODIFIER (Protected) }
+| "public"      { MODIFIER Public }
+| "private"     { MODIFIER Private }
+| "protected"   { MODIFIER Protected }
 
-| "extern"      { MODIFIER (Extern) }
+| "extern"      { MODIFIER Extern }
 
-| "class"       { CLASS }
+| "class"       { STRUCTURE Class }
+| "struct"      { STRUCTURE Struct }
 | "new"         { NEW }
 
 | '.'           { DOT }
 
+| "switch"      { SWITCH }
 | "->"          { ARROW } (* to have pointers or to not *)
+| "|"           { PIPE }
 
 | "return"      { RETURN }
 
@@ -58,6 +60,7 @@ rule token = parse
 | '/'           { DIV }
 | '-'           { MINUS }
 | '*'           { TIMES }
+| '%'           { MOD }
 
 | '='           { ASSIGN_EQUALS }
 | "+="          { ASSIGN_PLUS }

@@ -3,3 +3,4 @@ dune__exe__Codegen
 dune__exe__Lexer
 dune__exe__Parser
 dune__exe__State
+dune__exe__Util

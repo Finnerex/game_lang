@@ -17,6 +17,12 @@ type typ =
 | TArray of typ
 | TCustom of string
 
+type structureType =
+| Class
+| Struct
+| Enum
+| Interface
+
 type expression =
 | Bool of bool
 | Int of int
@@ -29,6 +35,7 @@ type expression =
 | PrimitiveStaticField of typ * string
 
 | Ternary of expression * expression * expression
+| SwitchExpr of expression * (expression * expression) list
 
 | FunctionCall of string * (expression list) (* idk if these should actually be handled differently i could have expression option idk if that makes sense *)
 | MethodCall of expression * string * (expression list)  (* again, check if expression is type name *)
@@ -39,6 +46,7 @@ type expression =
 | Sub of expression * expression
 | Mul of expression * expression
 | Div of expression * expression
+| Mod of expression * expression
 
 | PreIncrement of var
 | PostIncrement of var
@@ -67,7 +75,7 @@ type statement =
 | ExpressionStatement of expression (* for throwing things away (function calls mainly but maybe other things) *)
 
 (* modifiers, name, methods and fields (maybe should be separate), maybe make the kind of statement more specific idk *)
-| ClassDefinition of (modifier list) * string * (statement list)
+| StructureDefinition of (modifier list) * structureType * string * (statement list)
 (* modifiers, type, name, params, body *)
 | MethodDefinition of (modifier list) * typ * string * ((typ * string) list) * (statement list)
 | ConstructorDefinition of (modifier list) * string * ((typ * string) list) * (statement list)
@@ -78,6 +86,7 @@ type statement =
 | Assign of var * expression
 
 | If of expression * statement * (statement option)
+| Switch of expression * (expression * statement) list
 
 | For of statement * expression * statement * statement
 | While of expression * statement

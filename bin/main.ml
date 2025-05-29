@@ -2,7 +2,8 @@
 [@@@ocaml.warning "-33"] (* suppress unused open for testing *)
 
 open Codegen
-open State 
+open State
+open Util
 
 let () =
 
@@ -11,15 +12,15 @@ let () =
   let lexbuf = Lexing.from_channel input_channel in
 
   try
-   let result = Parser.main Lexer.token lexbuf in
+    let result = Parser.main Lexer.token lexbuf in
 
-  let class_state = (PrgmSt.push_stack PrgmSt.empty) |> collect_class result in
-
-   let _ = codegen_scope result class_state CtrlSt.empty in
-   (* let _ = codegen_expr result PrgmSt.empty in *)
-   let oc = if Array.length(Sys.argv) > 2 then open_out Sys.argv.(2) else stdout in
-   Printf.fprintf oc "\n%s\n\n" (Llvm.string_of_llmodule the_module);
-   close_out oc
+    let class_state = collect_class result (PrgmSt.push_stack PrgmSt.empty) in
+    
+    let _ = codegen_scope result class_state in
+    (* let _ = codegen_expr result PrgmSt.empty in *)
+    let oc = if Array.length(Sys.argv) > 2 then open_out Sys.argv.(2) else stdout in
+    Printf.fprintf oc "\n%s\n\n" (Llvm.string_of_llmodule the_module);
+    close_out oc
 
   with
   | Parser.Error ->

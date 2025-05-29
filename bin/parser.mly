@@ -17,12 +17,14 @@
 %token TBOOL TINT TFLOAT TCHAR TSTRING TVOID TOBJECT
 
 %token <Ast.modifier> MODIFIER 
-%token CLASS
+%token <Ast.structureType> STRUCTURE
 %token NEW
 
 %token DOT
 
 %token ARROW
+%token SWITCH
+%token PIPE
 
 %token RETURN
 
@@ -33,7 +35,7 @@
 
 // operators
 %token PLUS MINUS
-%token TIMES DIV
+%token TIMES DIV MOD
 
 %token AND OR NOT
 
@@ -60,16 +62,20 @@
 
 
 // precedence (lower first)
+%nonassoc ARROW // i dont know if these should be low or high but i think low is right
+%nonassoc PIPE
 %right QUESTION_MARK COLON 
 %left OR
 %left AND
 %left BOOL_EQUALS NOT_EQUALS
 %left GREATER GREATER_EQ LESS LESS_EQ
-%left PLUS MINUS
-%left TIMES DIV
+%left PLUS MINUS 
+%left TIMES DIV MOD
 %nonassoc NOT
 %nonassoc IF
 %nonassoc ELSE
+%nonassoc INCREMENT DECREMENT
+%nonassoc VAR_PREC
 %left DOT
 
 
@@ -82,15 +88,15 @@
 
 main:
 // using directives, also i guess preprocessor directives exist
-// | list(class_definition) EOF
+// | list(structure_definition) EOF
 //     { $1 }
 | list(classlevel_definition) EOF { $1 }
 ;
 
 
-class_definition: // returns statement
-| list(MODIFIER) CLASS IDENT LBRACE list(classlevel_definition) RBRACE
-    { ClassDefinition($1, $3, $5) }
+structure_definition: // returns statement
+| list(MODIFIER) STRUCTURE IDENT LBRACE list(classlevel_definition) RBRACE
+    { StructureDefinition($1, $2, $3, $5) }
 ;
 
 primitive_type: // kinda a bad system
@@ -131,7 +137,7 @@ classlevel_definition:
 | list(MODIFIER) IDENT LPAREN define_params RPAREN LBRACE list(statement) RBRACE 
     { ConstructorDefinition($1, $2, $4, $7) }
 
-| class_definition
+| structure_definition
     { $1 }
 ;
 
@@ -170,17 +176,17 @@ incomplete_statement:
 | typ IDENT 
     { VarDefinition([], $1, $2, None) }
 
-| var ASSIGN_EQUALS expression
+| lvalue ASSIGN_EQUALS expression
     { Assign($1, $3) }
 
 
-| var ASSIGN_PLUS expression
+| lvalue ASSIGN_PLUS expression
     { Assign($1, Add(Access $1, $3))}
-| var ASSIGN_MINUS expression
+| lvalue ASSIGN_MINUS expression
     { Assign($1, Sub(Access $1, $3))}
-| var ASSIGN_TIMES expression
+| lvalue ASSIGN_TIMES expression
     { Assign($1, Mul(Access $1, $3))}
-| var ASSIGN_DIV expression
+| lvalue ASSIGN_DIV expression
     { Assign($1, Div(Access $1, $3))}
 
 | incr_decr
@@ -207,12 +213,16 @@ statement: // returns statement
 | IF LPAREN expression RPAREN statement ELSE statement
     { If($3, $5, (Some $7)) }
 
+// maybe expression should be pattern not exactly sure how that works (can match on a non constant and also some other syntaxes happen)
+| SWITCH LPAREN expression RPAREN nonempty_list(pair(delimited(PIPE, expression, ARROW), statement)) 
+    { Switch($3, $5) }
+
 // loop
 | FOR LPAREN incomplete_statement ENDLINE expression ENDLINE incomplete_statement RPAREN statement
     { For($3, $5, $7, $9) }
 | WHILE LPAREN expression RPAREN statement
     { While($3, $5)}
-| DO statement WHILE LPAREN expression RPAREN
+| DO statement WHILE LPAREN expression RPAREN ENDLINE
     { DoWhile($5, $2)}
 
 | BREAK ENDLINE
@@ -221,9 +231,13 @@ statement: // returns statement
     { Continue }
 ;
 
+// TODO restructure this
+lvalue:
+| IDENT { Var($1) }
+| lvalue DOT IDENT { Field(Access $1, $3) } /* i think this is what i want */
 
 var:
-| IDENT { Var($1) }
+| lvalue { $1 } %prec VAR_PREC
 | expression DOT IDENT { Field($1, $3) }
 ;
 
@@ -247,6 +261,9 @@ expression: // returns expression
 | function_call
     { $1 }
 
+| MINUS expression
+    { Sub((Int 0), $2) } /* TODO: sugar this into a negation i think bc theres an instruction for that */
+
 | NEW typ LPAREN input_params RPAREN // idk if typ or ident
     { ConstructorCall($2, $4) }
 
@@ -256,6 +273,9 @@ expression: // returns expression
 // ternary
 | expression QUESTION_MARK expression COLON expression
     { Ternary($1, $3, $5) }
+
+| SWITCH LPAREN expression RPAREN nonempty_list(pair(delimited(PIPE, expression, ARROW), expression))
+    { SwitchExpr($3, $5) }
 
 ;
 
@@ -268,6 +288,8 @@ math_expression:
     { Mul($1, $3) }
 | expression DIV expression
     { Div($1, $3) }
+| expression MOD expression
+    { Mod($1, $3) }
 
 | expression AND expression
     { And($1, $3) }
@@ -294,13 +316,9 @@ math_expression:
 literal:
 | INT_LIT
     { Int($1) }
-| MINUS INT_LIT
-    { Int(- $2) }
 
 | FLOAT_LIT
     { Float($1) }
-| MINUS FLOAT_LIT
-    { Float(-. $2) }
 
 | BOOL_LIT
     { Bool($1) }
@@ -311,15 +329,14 @@ literal:
 ;
 
 incr_decr:
-| var INCREMENT
+| lvalue INCREMENT
     { PostIncrement($1) }
-// | INCREMENT var
-//     { PreIncrement($2) }
-| var DECREMENT
-    { PreIncrement($1) } /* todo change and make work */
-    // { PostDecrement($1) }
-// | DECREMENT var
-//     { PreDecrement($2) }
+| INCREMENT lvalue // this problem does not happen if increment expression
+    { PreIncrement($2) }
+| lvalue DECREMENT
+    { PostDecrement($1) }
+| DECREMENT lvalue
+    { PreDecrement($2) }
 
 ;
 

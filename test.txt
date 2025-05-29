@@ -1,8 +1,22 @@
 
 int main() {
 
-    int a = 120;
-    a -= 5;
+    int i = method(10, 0.1) + method(0.1, 2);
+    
+    do {
+        i -= 1;
+        break;
+        i -= 65;
+    } while (i > 5);
 
-    return a;
+    return i;
+    
+}
+
+int method(int b, float j) {
+    return b + 50;
+}
+
+int method(float a, int b) {
+    return b + 2;
 }

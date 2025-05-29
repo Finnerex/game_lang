@@ -17,3 +17,6 @@ module Parser = Dune__exe__Parser
 
 (** @canonical Dune__exe.State *)
 module State = Dune__exe__State
+
+(** @canonical Dune__exe.Util *)
+module Util = Dune__exe__Util

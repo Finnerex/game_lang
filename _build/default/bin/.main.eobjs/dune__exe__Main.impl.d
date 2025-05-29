@@ -1,1 +1,1 @@
-bin/main.ml: Array Codegen CtrlSt Lexer Lexing Llvm Parser PrgmSt Printf State Sys
+bin/main.ml: Array Codegen Lexer Lexing Llvm Parser PrgmSt Printf State Sys Util

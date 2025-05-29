@@ -11,6 +11,8 @@ type token =
   | TFLOAT
   | TCHAR
   | TBOOL
+  | SWITCH
+  | STRUCTURE of (Ast.structureType)
   | STRING_LIT of (string)
   | RPAREN
   | RETURN
@@ -18,11 +20,13 @@ type token =
   | RBRACE
   | QUESTION_MARK
   | PLUS
+  | PIPE
   | OR
   | NOT_EQUALS
   | NOT
   | NEW
   | MODIFIER of (Ast.modifier)
+  | MOD
   | MINUS
   | LPAREN
   | LESS_EQ
@@ -47,7 +51,6 @@ type token =
   | CONTINUE
   | COMMA
   | COLON
-  | CLASS
   | BREAK
   | BOOL_LIT of (bool)
   | BOOL_EQUALS
