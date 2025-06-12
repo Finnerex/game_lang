@@ -1,16 +1,25 @@
 {
     open Parser
+    open Lexing
     let string_buf = Buffer.create 256
     exception SyntaxError of string
+
+    let newline lexbuf =
+    let pos = lexbuf.lex_curr_p in
+    lexbuf.lex_curr_p <- { pos with
+      pos_lnum = pos.pos_lnum + 1;
+      pos_bol = pos.pos_cnum;
+    }
 }
 
-let blank = [' ' '\t' '\n' '\r']
+let blank = [' ' '\t' '\r']
 let digit = ['0'-'9']
 
 let ident = '_'* ['A'-'Z' 'a'-'z'] ['A'-'Z' 'a'-'z' '_' '0'-'9']*
 
 
 rule token = parse
+| '\n'          { newline lexbuf; token lexbuf }
 | blank+        { token lexbuf }
 | digit* '.' digit+ { FLOAT_LIT (float_of_string(Lexing.lexeme lexbuf))}
 | digit+        { INT_LIT (int_of_string(Lexing.lexeme lexbuf))}
@@ -25,6 +34,7 @@ rule token = parse
 | "protected"   { MODIFIER Protected }
 
 | "extern"      { MODIFIER Extern }
+| "static"      { MODIFIER Static }
 
 | "class"       { STRUCTURE Class }
 | "struct"      { STRUCTURE Struct }

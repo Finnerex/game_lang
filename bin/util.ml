@@ -1,4 +1,5 @@
 open Ast
+open State
 
 exception Unimplemented
 exception TypeMismatch
@@ -15,29 +16,30 @@ let bool = Llvm.i1_type context
 let float = Llvm.float_type context
 let void = Llvm.void_type context
 
-let to_lltype = function
-| TVoid -> void
-| TBool -> bool
-| TInt -> i32
-| TFloat -> float
-| TPointer _ -> Llvm.pointer_type context
-(* | TCustom _ -> struct (??) *)
-| _ -> raise (FatalError "no lltype exists for this type")
+let to_lltype t state =
+  match t with 
+  | TVoid -> void
+  | TBool -> bool
+  | TInt -> i32
+  | TFloat -> float
+  | TPointer _ -> Llvm.pointer_type context
+  | TCustom n -> PrgmSt.find_type state n
+  | _ -> raise (FatalError "no lltype exists for this type")
 
 (* a better promotion system will have to be devised *)
 let promote_to_float a b = (Llvm.build_sitofp a float "tmpfloat" builder, Llvm.build_sitofp b float "tmpfloat" builder)
 
-let entry_block_alloca func name typ =
+let entry_block_alloca func name typ state : Llvm.llvalue=
   func |> Llvm.entry_block |> Llvm.instr_begin |> Llvm.builder_at context |> (* she line on my pipe til i ocam *)
-  Llvm.build_alloca (to_lltype typ) name
+  Llvm.build_alloca (to_lltype typ state) name
 
 let rec string_of_typ = function 
 | TVoid -> "void"
 | TBool -> "bool"
 | TInt -> "int"
 | TFloat -> "float"
-| TPointer t -> (string_of_typ t) ^ "_ptr"
-| TCustom name -> "custom_" ^ name
+| TPointer t -> (string_of_typ t) ^ "_p"
+| TCustom name -> "c_" ^ name
 | _ -> raise Unimplemented
 
 (* maybe should take in lltype instead of typ *)

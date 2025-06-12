@@ -4,33 +4,30 @@ open Ast
 exception InvalidState
 exception SymbolNotFound
 
-(* modified from gisforgravity's amazing code in finnerex/language *)
+(* modified from gisforgravity's amazing code in github.com/finnerex/language *)
 module StLvl = struct
-  (* map of functions, map of vars *) (* functions will probably end up not being string list statement list *)
-  type t = (string, (Llvm.llvalue * typ)) Hashtbl.t * (string, (Llvm.llvalue * typ)) Hashtbl.t
+  type t =
+  {
+    methods: (string, (Llvm.llvalue * typ)) Hashtbl.t;
+    static_methods: (string, (Llvm.llvalue * typ)) Hashtbl.t;
+    vars: (string, (Llvm.llvalue * typ)) Hashtbl.t
+  }
 
-  let add_var state name (value:(Llvm.llvalue * typ)) =
-    let (function_map, var_map) = state in Hashtbl.replace var_map name value; (function_map, var_map)
+  let add_var state name (value:Llvm.llvalue * typ) = Hashtbl.replace state.vars name value; state
+  let add_func state name func = Hashtbl.replace state.methods name func; state
+  let add_static state name m = Hashtbl.replace state.static_methods name m; state
 
-  let rec add_vars state (var_list:(string * (Llvm.llvalue * typ)) list) =
-    match var_list with
-    | [] -> state
-    | (n, v) :: ivl2 -> add_vars (add_var state n v) ivl2
-
-  let add_func state name func =
-    let (function_map, var_map) = state in Hashtbl.replace function_map name func; (function_map, var_map)
-
-  let find_var_opt state name =
-    let (_, vm) = state in Hashtbl.find_opt vm name
-
-  let find_func_opt state name =
-    let (fm, _) = state in Hashtbl.find_opt fm name
+  let find_var_opt state name = Hashtbl.find_opt state.vars name
+  let find_func_opt state name = Hashtbl.find_opt state.methods name
+  let find_static_opt state name = Hashtbl.find_opt state.static_methods name
     
-  let empty ():t = (Hashtbl.create 64, Hashtbl.create 32)
+  let empty ():t = { vars = Hashtbl.create 16; methods = Hashtbl.create 8; static_methods = Hashtbl.create 8; }
 end
 
-
+(* i should only have to return the state if i want a parent function to know about a push or a pop *)
 module PrgmSt = struct
+  type structdata = { llt: Llvm.lltype; elements: (string, int * typ) Hashtbl.t }
+
   type t =
   {
     scopes: StLvl.t list;
@@ -39,7 +36,9 @@ module PrgmSt = struct
     loop_cont_block: Llvm.llbasicblock option;
 
     function_ret_type: typ;
-    class_name: string;
+    current_class_name: string;
+
+    types: (string, structdata) Hashtbl.t
   }
   
   
@@ -76,47 +75,61 @@ module PrgmSt = struct
       | s :: new_sl -> let new_s = StLvl.add_var s name value in new_s :: new_sl)
   }
 
-  let add_vars sl (var_list:(string * (Llvm.llvalue * typ)) list) = { sl with scopes = 
-    (match sl.scopes with
-    | [] -> raise InvalidState
-    | s :: new_sl -> let new_s = StLvl.add_vars s var_list in new_s :: new_sl)
-  }
-
   let add_func sl name func = { sl with scopes = 
     match sl.scopes with
     | [] -> raise InvalidState
     | s :: new_sl -> let new_s = StLvl.add_func s name func in new_s :: new_sl
   }
 
-  let rec find_var_opt sl name = 
-    match sl with
-    | [] -> None
-    | s :: new_sl ->
-      (match StLvl.find_var_opt s name with
-      | Some(v) -> Some v
-      | None -> find_var_opt new_sl name)
+  let add_static sl name func = { sl with scopes = 
+    match sl.scopes with
+    | [] -> raise InvalidState
+    | s :: new_sl -> let new_s = StLvl.add_static s name func in new_s :: new_sl
+  }
 
-  let find_var sl name =
-    match find_var_opt sl.scopes name with
-    | Some(v) -> v
-    | None -> raise Not_found
+  let rec find_opt sl name ~f =
+    match sl with 
+    | [] -> None
+    | s :: new_sl -> 
+      (match f s name with
+      | Some a -> Some a
+      | None -> find_opt new_sl name ~f)
+
+  let find sl name ~f =
+    match find_opt sl name ~f with
+    | Some a -> a
+    | None -> raise Not_found 
+
+  let find_var_opt sl name = find_opt sl.scopes name ~f:StLvl.find_var_opt
+  let find_var sl name = find sl.scopes name ~f:StLvl.find_var_opt
   
-  let rec find_func sl name =
-      match sl.scopes with
-      | [] -> raise Not_found
-      | s :: new_sl ->
-        (match StLvl.find_func_opt s name with
-        | Some(f) -> f
-        | None -> find_func {sl with scopes = new_sl} name)
+  let find_func_opt sl name = find_opt sl.scopes name ~f:StLvl.find_func_opt
+  let find_func sl name = find sl.scopes name ~f:StLvl.find_func_opt
+
+  let find_static_opt sl name = find_opt sl.scopes name ~f:StLvl.find_static_opt
+  let find_static sl name = find sl.scopes name ~f:StLvl.find_static_opt
 
   let set_loop_blocks st b c = { st with loop_break_block = Some b; loop_cont_block = Some c }
 
   let set_fun_type st ty = { st with function_ret_type = ty }
 
-  let set_class_name st n = { st with class_name = n }
+  let set_class_name st n = { st with current_class_name = n }
 
   let get_loop_break st = match st.loop_break_block with Some b -> b | None -> raise InvalidState
   let get_loop_cont st = match st.loop_cont_block with Some b -> b | None -> raise InvalidState
 
-  let empty = { scopes = [StLvl.empty ()]; loop_break_block = None; loop_cont_block = None; function_ret_type = TVoid; class_name = "default" }
+  let has_type st name = Hashtbl.mem st.types name
+  let find_type st name = (Hashtbl.find st.types name).llt
+  let find_field st tyname fname = Hashtbl.find (Hashtbl.find st.types tyname).elements fname
+  let add_type st name ty = Hashtbl.replace st.types name ty
+
+  let empty =
+  {
+    scopes = [StLvl.empty ()];
+    loop_break_block = None;
+    loop_cont_block = None;
+    function_ret_type = TVoid;
+    current_class_name = "default";
+    types = Hashtbl.create 8;
+  }
 end

@@ -50,6 +50,9 @@ llvm-dis optimized.bc -o -
 
 would be cool if i could do this in the compiler, as well as the other steps that are in the bash script
 
+show backtrace:
+dune exec --debug-backtraces game_lang test.txt output.ll
+
 
 int a = 0;
 

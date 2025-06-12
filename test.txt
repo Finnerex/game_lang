@@ -1,22 +1,36 @@
 
-int main() {
+public struct B
+{
+    public static int Main()
+    {
+        A j = new A();
+        j = new A();
 
-    int i = method(10, 0.1) + method(0.1, 2);
-    
-    do {
-        i -= 1;
-        break;
-        i -= 65;
-    } while (i > 5);
+        A j3 = A.StaticMethod(new B());
+        A j4 = A.StaticMethod(new A());
 
-    return i;
-    
+        // int i = j3.numJaws;
+
+        return 10;
+    }
 }
 
-int method(int b, float j) {
-    return b + 50;
+public struct A
+{
+
+    public int numJaws = 10;
+
+    public static int Main()
+    {
+        int i = 120;
+        B b = new B();
+        A j = StaticMethod(b);
+        return i;
+    }
+
+    public static A StaticMethod(B b) -> new A();
+    public static A StaticMethod(A a) -> new A();
+
 }
 
-int method(float a, int b) {
-    return b + 2;
-}
+

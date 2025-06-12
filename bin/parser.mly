@@ -90,7 +90,7 @@ main:
 // using directives, also i guess preprocessor directives exist
 // | list(structure_definition) EOF
 //     { $1 }
-| list(classlevel_definition) EOF { $1 }
+| list(structure_definition) EOF { $1 }
 ;
 
 
@@ -122,17 +122,20 @@ typ:
 
 
 classlevel_definition:
-| list(MODIFIER) typ IDENT ASSIGN_EQUALS expression 
+| list(MODIFIER) typ IDENT ASSIGN_EQUALS expression ENDLINE
     { VarDefinition($1, $2, $3, (Some $5)) }
 
-| list(MODIFIER) typ IDENT ASSIGN_EQUALS array_literal // maybe this should actually be different
+| list(MODIFIER) typ IDENT ASSIGN_EQUALS array_literal ENDLINE // maybe this should actually be different
     { VarDefinition($1, $2, $3, (Some $5)) }
 
-| list(MODIFIER) typ IDENT 
+| list(MODIFIER) typ IDENT ENDLINE
     { VarDefinition($1, $2, $3, None) }
 
 | list(MODIFIER) typ IDENT LPAREN define_params RPAREN LBRACE list(statement) RBRACE 
     { MethodDefinition($1, $2, $3, $5, $8) }
+
+| list(MODIFIER) typ IDENT LPAREN define_params RPAREN ARROW expression ENDLINE
+    { MethodDefinition($1, $2, $3, $5, [Return (Some $8)]) }
 
 | list(MODIFIER) IDENT LPAREN define_params RPAREN LBRACE list(statement) RBRACE 
     { ConstructorDefinition($1, $2, $4, $7) }
@@ -143,10 +146,12 @@ classlevel_definition:
 
 
 function_call:
-| IDENT LPAREN input_params RPAREN
+| var LPAREN input_params RPAREN // this is definitely a little strange
     { FunctionCall($1, $3) }
-| expression DOT IDENT LPAREN input_params RPAREN
-    { MethodCall($1, $3, $5) }
+// | IDENT LPAREN input_params RPAREN
+//     { FunctionCall($1, $3) }
+// | expression DOT IDENT LPAREN input_params RPAREN
+//     { MethodCall($1, $3, $5) }
 | primitive_type DOT IDENT LPAREN input_params RPAREN
     { PrimitiveStaticMethodCall($1, $3, $5) }
 ;

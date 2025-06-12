@@ -33,33 +33,67 @@ let rec codegen_expr (e:expression) (state:PrgmSt.t) : Llvm.llvalue * typ =
   | GreaterEq(a, b) -> codegen_compare ~i:(Llvm.build_icmp Llvm.Icmp.Sge) ~f:(Llvm.build_fcmp Llvm.Fcmp.Uge) a b "getmp" state
 
   | PostIncrement(Var name) ->
-    let value, t = PrgmSt.find_var state name in let load = Llvm.build_load (to_lltype t) value name builder in
+    let value, t = PrgmSt.find_var state name in let load = Llvm.build_load (to_lltype t state) value name builder in
     let incr = Llvm.build_add load (fst(codegen_expr (Int 1) state)) "tmppostincr" builder in (* TODO: floats can also be incremented *)
     Llvm.build_store incr value builder |> ignore; load, t
   | PreIncrement(Var name) ->
-    let value, t = PrgmSt.find_var state name in let load = Llvm.build_load (to_lltype t) value name builder in
+    let value, t = PrgmSt.find_var state name in let load = Llvm.build_load (to_lltype t state) value name builder in
     let incr = Llvm.build_add load (fst(codegen_expr (Int 1) state)) "tmppreincr" builder in
     Llvm.build_store incr value builder |> ignore; incr, t
-
 
   | Ternary(condition, if_then, if_else) -> codegen_ternary condition if_then if_else state
 
   (* this will not work for op overloads or anything unless struct type *)
   (* this is also like bad because it will load it a bunch when it doesnt need to *)
-  | Access(Var name) -> let (value, t) = PrgmSt.find_var state name in Llvm.build_load (to_lltype t) value name builder, t
+  | Access(Var name) -> let (value, t) = PrgmSt.find_var state name in Llvm.build_load (to_lltype t state) value name builder, t
+  | Access(Field(x, name)) -> 
+    let expr, t = codegen_expr x state in
+    let expr, structName = 
+      (match t with
+      | TCustom n -> (* pointer to *) expr, n
+      | TPointer(TCustom n) -> expr, n (* already pointer *)
+      | _ -> raise Unimplemented) in
+    (* TODO: base of gep must be a pointer *)
+    let idx, ftype = (PrgmSt.find_field state structName name) in
+    Llvm.build_struct_gep (PrgmSt.find_type state structName) expr idx (structName ^ name) builder, ftype
 
-  | FunctionCall(name, args) ->
-    let arg_array = args |> Array.of_list |> Array.map (fun a -> codegen_expr a state) in
-    let arg_exprs, arg_ts = Array.split arg_array in
+  | FunctionCall(Var name, args) -> (* function (no dot) *)
+    let arg_exprs, arg_ts = args |> Array.of_list |> Array.map (fun a -> codegen_expr a state) |> Array.split in
 
-    let mangled_name = mangle_method_name state.class_name name arg_ts in (* use enclosing class as the class name *)
-    let (the_function, return_type) = PrgmSt.find_func state mangled_name in 
+    let mangled_name = mangle_method_name state.current_class_name name arg_ts in (* use enclosing class as the class name *)
+    let the_function, return_type = match PrgmSt.find_static_opt state mangled_name with
+    Some(f, t) -> f, t | None -> PrgmSt.find_func state mangled_name in 
     
-    let func_type = arg_ts |> Array.map (fun a -> a |> to_lltype) |> Llvm.function_type (to_lltype return_type) in
+    let func_type = arg_ts |> Array.map (fun a -> to_lltype a state) |> Llvm.function_type (to_lltype return_type state) in
     let tmp_name = if return_type = TVoid then "" else "calltmp" in
     Llvm.build_call func_type the_function arg_exprs tmp_name builder, return_type
       
+  | FunctionCall(Field (x, name), args) -> (* method with dot *)
+    let expr, t = (match x with
+      | Access (Var v) ->
+        if PrgmSt.has_type state v then None, TCustom v else
+        let expr, t = codegen_expr x state in Some expr, t
+      | _ -> let expr, t = codegen_expr x state in Some expr, t
+    ) in
+     
+    let arg_exprs, arg_ts = args |> Array.of_list |> Array.map (fun a -> codegen_expr a state) |> Array.split in
+    let mangled_name = (match t with
+      | TCustom s_name -> mangle_method_name s_name name arg_ts
+      | _ -> raise (FatalError "method called on non-custom type") (* or maybe things can happen *)) in
   
+    (* "expr" should be the first of the args if not static *)
+    let the_function, return_type = match expr with 
+    | Some _ -> PrgmSt.find_func state mangled_name 
+    | None -> PrgmSt.find_static state mangled_name in
+
+    let func_type = arg_ts |> Array.map (fun a -> to_lltype a state) |> Llvm.function_type (to_lltype return_type state) in
+    let tmp_name = if return_type = TVoid then "" else "calltmp" in
+    Llvm.build_call func_type the_function arg_exprs tmp_name builder, return_type
+    
+  | ConstructorCall(t, args) ->
+    let llt = PrgmSt.find_type state (match t with TCustom(x) -> x | _ -> raise Unimplemented) in
+    Llvm.const_named_struct llt [||], t (* TODO: init correctly and call constructor *)
+
   | _ -> raise Unimplemented
 
 (* all of these feel too similar *)
@@ -132,15 +166,15 @@ let rec codegen_statement (s:statement) (state:PrgmSt.t) =
   | VarDefinition(_, t, name, value) -> 
     let parent_func = Llvm.block_parent (Llvm.insertion_block builder) in 
     let alloca = 
-      (match PrgmSt.find_var_opt state.scopes name with
+      (match PrgmSt.find_var_opt state name with
       | Some _ -> raise (CompileError "a variable with this name already exists")
-      | None -> entry_block_alloca parent_func name t) in 
+      | None -> entry_block_alloca parent_func name t state) in 
       PrgmSt.add_var state name (alloca, t) |> ignore;
       let v = 
         (match value with (* promotion will have to happen here at some point *)
         | Some e -> let (expr_value, expr_type) = codegen_expr e state in if expr_type <> t then
           raise (CompileError "variable type does not match assigned expression's type") else expr_value
-        | None -> t |> to_lltype |> Llvm.const_null) in Llvm.build_store v alloca builder |> ignore;
+        | None -> (to_lltype t state) |> Llvm.const_null) in Llvm.build_store v alloca builder |> ignore;
         state
 
   | Assign(Var(name), e) ->
@@ -149,7 +183,7 @@ let rec codegen_statement (s:statement) (state:PrgmSt.t) =
     if var_type <> expr_type then raise (CompileError "variable type does not match assigned expression's type") else (* TODO: deal with promotion *)
     Llvm.build_store expr_value var_value builder |> ignore; state
 
-  | MethodDefinition(_, t, name, params, body) -> codegen_function t name params body state
+  | MethodDefinition(modifiers, t, name, params, body) -> codegen_function modifiers t name params body state
 
   | Return(e) -> 
     (match e with 
@@ -171,6 +205,8 @@ let rec codegen_statement (s:statement) (state:PrgmSt.t) =
 
   | Break -> Llvm.build_br (PrgmSt.get_loop_break state) builder |> ignore; state
   | Continue -> Llvm.build_br (PrgmSt.get_loop_cont state) builder |> ignore; state
+
+  (* | StructureDefinition(_) -> codegen_structure s state *)
 
   | _ -> raise Unimplemented
 
@@ -275,9 +311,9 @@ and codegen_while condition body is_do state =
   Llvm.position_at_end end_block builder;
 
 
-and codegen_function return_type name (params:(typ * string) list) body state =
+and codegen_function modifiers return_type name (params:(typ * string) list) body state =
   
-  let the_function = codegen_function_decl return_type name params state in
+  let the_function = codegen_function_decl modifiers return_type name params state in
 
   let entry_block = Llvm.append_block context "entry" the_function in
   Llvm.position_at_end entry_block builder;
@@ -285,7 +321,7 @@ and codegen_function return_type name (params:(typ * string) list) body state =
   List.iteri (fun i (ty, param_name) ->
     let param = Llvm.param the_function i in
     Llvm.set_value_name param_name param;
-    let alloca = entry_block_alloca the_function param_name ty in
+    let alloca = entry_block_alloca the_function param_name ty state in
     Llvm.build_store param alloca builder |> ignore;
     PrgmSt.add_var state param_name (alloca, ty) |> ignore;
   ) params;
@@ -302,35 +338,18 @@ and codegen_function return_type name (params:(typ * string) list) body state =
   
   final_state
 
-and codegen_function_decl return_type name (params:(typ * string) list) state = 
+and codegen_function_decl modifiers return_type name (params:(typ * string) list) state = 
   let param_ts = Array.of_list (List.map (fun p -> fst p) params) in
-  let mangled_name = mangle_method_name state.class_name name param_ts in 
+  let mangled_name = mangle_method_name state.current_class_name name param_ts in 
 
-  let param_types = Array.map (fun p -> p |> to_lltype) param_ts in
-  let func_type = Llvm.function_type (to_lltype return_type) param_types in
+  let param_types = Array.map (fun p -> to_lltype p state) param_ts in
+  let func_type = Llvm.function_type (to_lltype return_type state) param_types in
   
   let the_function = Llvm.declare_function mangled_name func_type the_module in
 
   (* TODO: will have to check for existing declarations *)
-  PrgmSt.add_func state mangled_name (the_function, return_type) |> ignore;
+  (if List.mem Static modifiers then
+    PrgmSt.add_static state mangled_name (the_function, return_type) else
+    PrgmSt.add_func state mangled_name (the_function, return_type)) |> ignore;
   the_function
 
-
-  (* returns a state associated with the given class (as a list of method and var defs) *)
-and collect_class (sl:statement list) (state:PrgmSt.t) : PrgmSt.t =
-  match sl with
-  | [] -> state
-  | x :: xs -> 
-    match x with
-    | MethodDefinition(_, t, name, params, _) -> codegen_function_decl t name params state |> ignore; collect_class xs state
-    | VarDefinition(_) -> raise Unimplemented
-    | _ -> raise (FatalError "unexpected classlevel statement")
-
-
-and codegen_structure modifiers structure_type name body state =
-  match structure_type with
-  | Struct ->
-    let structure_state(* , fields *) = collect_class body state in (* idk bro *)
-    let struct_type = Llvm.named_struct_type context name in
-    Llvm.struct_set_body struct_type (* idk bruh oop is hard to make *)
-  | _ -> raise Unimplemented 

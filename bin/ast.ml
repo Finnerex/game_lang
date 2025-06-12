@@ -4,6 +4,7 @@ type modifier =
 | Private
 | Protected
 | Extern
+| Static
 
 type typ = 
 | TBool
@@ -37,8 +38,8 @@ type expression =
 | Ternary of expression * expression * expression
 | SwitchExpr of expression * (expression * expression) list
 
-| FunctionCall of string * (expression list) (* idk if these should actually be handled differently i could have expression option idk if that makes sense *)
-| MethodCall of expression * string * (expression list)  (* again, check if expression is type name *)
+| FunctionCall of var * (expression list) (* probably the worst way this could be done but i didnt feel like changing the parser *)
+(* | MethodCall of expression * string * (expression list)  (* again, check if expression is type name *) *)
 | ConstructorCall of typ * (expression list)
 | PrimitiveStaticMethodCall of typ * string * (expression list)
 
