@@ -1,18 +1,18 @@
 
 [@@@ocaml.warning "-33"] (* suppress unused open for testing *)
 
-open Codegen
+open Cg_statement
 open State
 open Util
 open Ast
 open Collect
 
 let get_main_ast n = ExpressionStatement(FunctionCall(Field (Access (Var n), "Main"), []))
-(* generate a function called "main" that calls all of the Main methods. right now this reuires all strucutres to have a Main *)
+(* generate a function called "main" that calls all of the Main methods. right now this requires all strucutres to have a Main *)
 let codegen_main (class_names:string list) state =
   let calls = List.map (fun s -> get_main_ast s) class_names in
   let body = calls @ [Return (Some (Int 0))] in
-  codegen_function [] TInt "main" [] body state
+  codegen_function [Static] TInt "main" [] body state
 
 
 let () =
@@ -40,7 +40,6 @@ let () =
     let state = PrgmSt.empty in
     List.iter (fun c -> define_type c state |> ignore; ) result;
    
-    (* 3x iterations i think makes sense *)
     List.iter (fun c -> 
       let body, name = match c with StructureDefinition(_, _, n, sl) -> sl, n | _ -> raise Unimplemented in
       collect_methods body {state with current_class_name = name };

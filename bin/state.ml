@@ -2,7 +2,7 @@
 open Ast
 
 exception InvalidState
-exception SymbolNotFound
+exception SymbolNotFound of string
 
 (* modified from gisforgravity's amazing code in github.com/finnerex/language *)
 module StLvl = struct
@@ -26,7 +26,7 @@ end
 
 (* i should only have to return the state if i want a parent function to know about a push or a pop *)
 module PrgmSt = struct
-  type structdata = { llt: Llvm.lltype; elements: (string, int * typ) Hashtbl.t }
+  type structdata = { llt: Llvm.lltype; elements: (string, int * typ) Hashtbl.t } (* elements are name -> index, type *)
 
   type t =
   {
@@ -38,7 +38,7 @@ module PrgmSt = struct
     function_ret_type: typ;
     current_class_name: string;
 
-    types: (string, structdata) Hashtbl.t
+    types: (string, structdata) Hashtbl.t (* custom type names and their lltypes/elements *)
   }
   
   
@@ -53,7 +53,7 @@ module PrgmSt = struct
 
   let rec try_replace_var sl name value =
     match sl.scopes with
-    | [] -> Error(Not_found)
+    | [] -> Error(SymbolNotFound name)
     | s :: new_sl -> 
       (match StLvl.find_var_opt s name with
       | None -> 
@@ -98,7 +98,8 @@ module PrgmSt = struct
   let find sl name ~f =
     match find_opt sl name ~f with
     | Some a -> a
-    | None -> raise Not_found 
+    | None -> raise (SymbolNotFound name)
+  
 
   let find_var_opt sl name = find_opt sl.scopes name ~f:StLvl.find_var_opt
   let find_var sl name = find sl.scopes name ~f:StLvl.find_var_opt

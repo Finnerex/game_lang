@@ -1,15 +1,32 @@
 
 public struct B
 {
+
+    // public A theA;
+    public int numBalls = 1203;
+
     public static int Main()
     {
-        A j = new A();
-        j = new A();
+        // A j = new A();
+        // j = new A();
 
-        A j3 = A.StaticMethod(new B());
-        A j4 = A.StaticMethod(new A());
+        // A j3 = A.StaticMethod(new B());
+        // A j4 = A.StaticMethod(new A());
 
         // int i = j3.numJaws;
+        // j3.numJaws = 213;
+
+        // j.theB.numBalls = 0;
+
+        int i = 0;
+
+        i = i + 1;
+
+
+        A j5 = new A();
+
+        j5.InstanceMethod(1203);
+        
 
         return 10;
     }
@@ -17,19 +34,39 @@ public struct B
 
 public struct A
 {
-
     public int numJaws = 10;
+    public B theB;
 
     public static int Main()
     {
-        int i = 120;
-        B b = new B();
-        A j = StaticMethod(b);
-        return i;
+        // int i = 120;
+        // B b = new B();
+        // A j = StaticMethod(b);
+        return 0;
     }
 
-    public static A StaticMethod(B b) -> new A();
-    public static A StaticMethod(A a) -> new A();
+    // public static A StaticMethod(B b) -> new A();
+    // public static A StaticMethod(A a) -> new A();
+
+    public static void Test(int number) {
+        number ++;
+    }
+
+    
+    public void InstanceMethod(int a) { 
+        numJaws = a;
+        this.numJaws = a + 12;
+        // a = 12;
+        /* these might not actually modify bc the param isnt a pointer
+        or wait i dont think it should in the first place or should it idk but i think it has to be passed as ptr
+        also it is very possible that a is modified outside because of the whole alloca thing - TODO: test */
+        return;
+    }
+
+    // public void InstanceMethodB() {
+    //     InstanceMethod(123);
+    //     return;
+    // }
 
 }
 

@@ -2,49 +2,49 @@
 ; ModuleID = 'main'
 source_filename = "main"
 
-%A = type { i32 }
-%B = type {}
+%A = type { %B, i32 }
+%B = type { i32 }
 
 define i32 @B-1n-Main-2p() {
 entry:
-  %j4 = alloca %A, align 8
-  %j3 = alloca %A, align 8
-  %j = alloca %A, align 8
-  store %A zeroinitializer, ptr %j, align 4
-  store %A zeroinitializer, ptr %j, align 4
-  %calltmp = call %A @A-1n-StaticMethod-2p-c_B(%B zeroinitializer)
-  store %A %calltmp, ptr %j3, align 4
-  %calltmp1 = call %A @A-1n-StaticMethod-2p-c_A(%A zeroinitializer)
-  store %A %calltmp1, ptr %j4, align 4
+  %j5 = alloca %A, align 8
+  %i = alloca i32, align 4
+  store i32 0, ptr %i, align 4
+  %i1 = load i32, ptr %i, align 4
+  %addtmp = add i32 %i1, 1
+  store i32 %addtmp, ptr %i, align 4
+  store %A zeroinitializer, ptr %j5, align 4
+  call void @A-1n-InstanceMethod-2p-int(ptr %j5, i32 1203)
   ret i32 10
 }
 
 define i32 @A-1n-Main-2p() {
 entry:
-  %j = alloca %A, align 8
-  %b = alloca %B, align 8
-  %i = alloca i32, align 4
-  store i32 120, ptr %i, align 4
-  store %B zeroinitializer, ptr %b, align 1
-  %b1 = load %B, ptr %b, align 1
-  %calltmp = call %A @A-1n-StaticMethod-2p-c_B(%B %b1)
-  store %A %calltmp, ptr %j, align 4
-  %i2 = load i32, ptr %i, align 4
-  ret i32 %i2
+  ret i32 0
 }
 
-define %A @A-1n-StaticMethod-2p-c_B(%B %b) {
+define void @A-1n-Test-2p-int(i32 %number) {
 entry:
-  %b1 = alloca %B, align 8
-  store %B %b, ptr %b1, align 1
-  ret %A zeroinitializer
+  %number1 = alloca i32, align 4
+  store i32 %number, ptr %number1, align 4
+  %number2 = load i32, ptr %number1, align 4
+  %tmppostincr = add i32 %number2, 1
+  store i32 %tmppostincr, ptr %number1, align 4
+  ret void
 }
 
-define %A @A-1n-StaticMethod-2p-c_A(%A %a) {
+define void @A-1n-InstanceMethod-2p-int(ptr %this, i32 %a) {
 entry:
-  %a1 = alloca %A, align 8
-  store %A %a, ptr %a1, align 4
-  ret %A zeroinitializer
+  %a1 = alloca i32, align 4
+  store i32 %a, ptr %a1, align 4
+  %AnumJaws = getelementptr inbounds %A, ptr %this, i32 0, i32 1
+  %a2 = load i32, ptr %a1, align 4
+  store i32 %a2, ptr %AnumJaws, align 4
+  %AnumJaws3 = getelementptr inbounds %A, ptr %this, i32 0, i32 1
+  %a4 = load i32, ptr %a1, align 4
+  %addtmp = add i32 %a4, 12
+  store i32 %addtmp, ptr %AnumJaws3, align 4
+  ret void
 }
 
 define i32 @main() {

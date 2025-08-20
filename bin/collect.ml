@@ -1,4 +1,4 @@
-open Codegen
+open Cg_statement
 open Ast
 open Util
 open State
@@ -25,20 +25,23 @@ let rec collect_fields (sl:statement list) (field_tys:Llvm.lltype list) (field_n
   | x :: xs -> 
     match x with (* maybe have a hashtbl structure that holds struct names, fields with offsets, and default values *)
     | VarDefinition(_, t, n, _) ->
-      collect_fields xs (to_lltype t state :: field_tys) ((n, t) :: field_names) state
+      collect_fields xs (to_lltype t state :: field_tys) ((n, t) :: field_names) state (* --------- TODO: i actuall have to delcare and define type separately bc this gets called in define type so right now doesnt allow for recursive types *)
     | _ -> collect_fields xs field_tys field_names state
       
 let define_type (s:statement) (state:PrgmSt.t) =
   match s with
   | StructureDefinition(_, structure_type, name, body) ->
     (match structure_type with
-    | Struct -> (* some of this will probably happen for all of them *)
+    | Struct -> 
+      (* some of this will probably happen for all of them *)
       (* create the struct type and make method decls *)
       let state = PrgmSt.set_class_name state name in
       let struct_type = Llvm.named_struct_type context name in
+
+      (* Cant do this here neccesarily because fields could use an undeclared type at this point *)
       let field_tys, field_names = collect_fields body [] [] state in
 
-      let field_idxs = Hashtbl.create 8 in
+      let field_idxs = Hashtbl.create (List.length field_names) in
       List.iteri (fun i (n, t) -> Hashtbl.replace field_idxs n (i, t)) field_names;
 
       Llvm.struct_set_body struct_type (Array.of_list field_tys) false;

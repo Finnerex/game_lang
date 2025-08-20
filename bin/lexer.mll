@@ -117,11 +117,12 @@ and str = parse
 (* add backslash escapes *)
 
 and line_comment = parse
-| '\n'  { lexbuf }
+| '\n'  { newline lexbuf; lexbuf }
 | eof   { lexbuf }
 | _     { line_comment lexbuf }
 
 and block_comment = parse
 | "*/"  { lexbuf }
 | eof   { lexbuf }
+| '\n'  { newline lexbuf; block_comment lexbuf }
 | _     { block_comment lexbuf }
