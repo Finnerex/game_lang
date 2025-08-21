@@ -12,7 +12,7 @@ let get_main_ast n = ExpressionStatement(FunctionCall(Field (Access (Var n), "Ma
 let codegen_main (class_names:string list) state =
   let calls = List.map (fun s -> get_main_ast s) class_names in
   let body = calls @ [Return (Some (Int 0))] in
-  codegen_function [Static] TInt "main" [] body state
+  codegen_function [Static] TInt "main" [] body NoMangle state
 
 
 let () =
@@ -38,8 +38,9 @@ let () =
     (* let state = define_types result PrgmSt.empty in *)
 
     let state = PrgmSt.empty in
+    List.iter (fun c -> declare_type c state |> ignore; ) result;
     List.iter (fun c -> define_type c state |> ignore; ) result;
-   
+
     List.iter (fun c -> 
       let body, name = match c with StructureDefinition(_, _, n, sl) -> sl, n | _ -> raise Unimplemented in
       collect_methods body {state with current_class_name = name };

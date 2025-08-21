@@ -20,7 +20,7 @@ let rec codegen_statement (s:statement) (state:PrgmSt.t) =
         (match value with (* promotion will have to happen here at some point *)
         | Some e -> let (expr_value, expr_type) = codegen_expr e state in if expr_type <> t then
           raise (CompileError "variable type does not match assigned expression's type") else expr_value
-        | None -> (to_lltype t state) |> Llvm.const_null) in Llvm.build_store v alloca builder |> ignore;
+        | None -> get_default_value t state) in Llvm.build_store v alloca builder |> ignore;
         state
 
   (* i could likely combine these two *)
@@ -36,7 +36,8 @@ let rec codegen_statement (s:statement) (state:PrgmSt.t) =
     if var_type <> expr_type then raise (CompileError "variable type does not match assigned expression's type") else (* TODO: deal with promotion *)
     Llvm.build_store expr_value var_value builder |> ignore; state
 
-  | MethodDefinition(modifiers, t, name, params, body) -> codegen_function modifiers t name params body state
+  | MethodDefinition(modifiers, t, name, params, body) -> codegen_function modifiers t name params body MangleDefault state
+  | ConstructorDefinition(modifiers, tname, params, body) -> codegen_function modifiers TVoid tname params body MangleConstructor state
 
   | Return(e) -> 
     (match e with 
@@ -164,9 +165,9 @@ and codegen_while condition body is_do state =
   Llvm.position_at_end end_block builder;
 
 
-and codegen_function modifiers return_type name (params:(typ * string) list) body state =
+and codegen_function modifiers return_type name (params:(typ * string) list) body mangle_type state =
   
-  let the_function = codegen_function_decl modifiers return_type name params state in
+  let the_function = codegen_function_decl modifiers return_type name params mangle_type state in
   let params = if List.mem Static modifiers then params else ((TPointer (TCustom state.current_class_name)), "this") :: params in
 
   let entry_block = Llvm.append_block context "entry" the_function in
@@ -194,9 +195,9 @@ and codegen_function modifiers return_type name (params:(typ * string) list) bod
   
   final_state
 
-and codegen_function_decl modifiers return_type name (params:(typ * string) list) state = 
+and codegen_function_decl modifiers return_type name (params:(typ * string) list) mangle_type state = 
   let param_ts = Array.of_list (List.map (fun p -> fst p) params) in
-  let mangled_name = mangle_method_name state.current_class_name name param_ts in 
+  let mangled_name = mangle_method_name state.current_class_name name param_ts mangle_type in 
 
   (* let param_ts = if List.mem Static modifiers then param_ts else (Array.append [| TCustom state.current_class_name |] param_ts) in *)
 

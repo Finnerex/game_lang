@@ -77,7 +77,7 @@ type statement =
 
 (* modifiers, name, methods and fields (maybe should be separate), maybe make the kind of statement more specific idk *)
 | StructureDefinition of (modifier list) * structureType * string * (statement list)
-(* modifiers, type, name, params, body *)
+(* modifiers, return type, name, params, body *)
 | MethodDefinition of (modifier list) * typ * string * ((typ * string) list) * (statement list)
 | ConstructorDefinition of (modifier list) * string * ((typ * string) list) * (statement list)
 

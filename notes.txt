@@ -69,3 +69,5 @@ switch (a)
         a -= 20;
     }
 | 2 -> for (int i; i < 102; i++) a *= 2;
+
+i think im calling the language stone or steel or something idk really

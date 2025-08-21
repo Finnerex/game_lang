@@ -30,6 +30,12 @@ let to_lltype t state =
 (* a better promotion system will have to be devised *)
 let promote_to_float a b = (Llvm.build_sitofp a llvm_float_type "tmpfloat" builder, Llvm.build_sitofp b llvm_float_type "tmpfloat" builder)
 
+let get_default_value t state =
+  let llt = (to_lltype t state) in
+  match t with 
+  | TCustom n -> let initial_vals = (PrgmSt.find_structdata state n).initial_vals in Llvm.const_named_struct llt initial_vals
+  | _ -> Llvm.const_null llt
+
 let rec string_of_typ = function 
 | TVoid -> "void"
 | TBool -> "bool"
@@ -57,10 +63,14 @@ let alloca_param func name typ param state =
   
 
 (* maybe should take in lltype instead of typ *)
-let mangle_method_name (* (ret_type:typ) *) structure_name method_name (param_types:typ array) = 
-  if method_name = "main" then "main" else
-  let params_str = Array.fold_left (fun last t -> last ^ "-" ^ string_of_typ t) "" param_types in
-  (* string_of_typ ret_type ^ "-1" ^ *) structure_name ^ "-1n-" ^ method_name ^ "-2p" ^ params_str (* i dont know what im doing *)
+type mangle_type = MangleDefault | NoMangle | MangleConstructor
+
+let mangle_method_name structure_name method_name (param_types:typ array) (mangle_type:mangle_type) = 
+  let params_str = if param_types <> [||] then Array.fold_left (fun last t -> last ^ "-" ^ string_of_typ t) "-p" param_types else "" in
+  match mangle_type with
+  | NoMangle -> method_name
+  | MangleDefault -> structure_name ^ "-n-" ^ method_name ^ params_str (* i dont know what im doing *)
+  | MangleConstructor -> structure_name ^ "-constructor" ^ params_str 
 
 let rec get_element_ptr obj fieldname state = 
   let v, t = match obj with 

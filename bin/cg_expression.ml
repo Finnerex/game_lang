@@ -55,32 +55,29 @@ let rec codegen_expr (e:expression) (state:PrgmSt.t) : Llvm.llvalue * typ =
   | FunctionCall(Var name, args) -> (* function (no dot) *) (* todo make work with instance *)
     let arg_exprs, arg_ts = args |> Array.of_list |> Array.map (fun a -> codegen_expr a state) |> Array.split in
 
-    let mangled_name = mangle_method_name state.current_class_name name arg_ts in (* use enclosing class as the class name *)
+    let mangled_name = mangle_method_name state.current_class_name name arg_ts MangleDefault in (* use enclosing class as the class name *)
     let (the_function, return_type), arg_exprs, arg_ts = 
     match PrgmSt.find_static_opt state mangled_name with
     | Some(f, t) -> (f, t), arg_exprs, arg_ts
     | None -> (* non-static *)
-      (* let this_t = TCustom state.current_class_name in *)
-      let arg_exprs, arg_ts = Array.append [|fst (PrgmSt.find_var state "this")|] arg_exprs, Array.append [|(* TODO THIS WQAS this_t BUT MAKING IT A POINTRE IS WORK SO IDK ptr *)|] arg_ts in
-      let mangled_name = mangle_method_name state.current_class_name name arg_ts in
+      let mangled_name = mangle_method_name state.current_class_name name arg_ts MangleDefault in
+      let arg_exprs, arg_ts = Array.append [|fst (PrgmSt.find_var state "this")|] arg_exprs, Array.append [| TPointer (TCustom state.current_class_name) |] arg_ts in
       PrgmSt.find_func state mangled_name, arg_exprs, arg_ts
     in 
     
-    let func_type = arg_ts |> Array.map (fun a -> to_lltype a state) |> Llvm.function_type (to_lltype return_type state) in
-    let tmp_name = if return_type = TVoid then "" else "calltmp" in
-    Llvm.build_call func_type the_function arg_exprs tmp_name builder, return_type
+    codegen_call the_function arg_exprs arg_ts return_type state, return_type
       
   | FunctionCall(Field (x, name), args) -> (* method with dot *)
     let expr, t, args = (match x with 
       | Access (Var v) ->
         if PrgmSt.has_type state v then None, TCustom v, args else (* static *)
-        let expr, t = get_var_or_field v state in Some expr, t, args (* add "this" to the beginning, should be done after mangle!!!!!! *) (* souldnt codegen here *) (* isnt static *)
-      | _ -> let expr, t = codegen_expr x state in Some expr, t, args (* will have to create an alloca for "this" here *) (* not static, not called on variable (called on expression) *)
+        let expr, t = get_var_or_field v state in Some expr, t, args (* isnt static *)
+      | _ -> let expr, t = codegen_expr x state in Some expr, t, args (* not static, not called on variable (called on expression) *)
     ) in
-     
+
     let arg_exprs, arg_ts = args |> Array.of_list |> Array.map (fun a -> codegen_expr a state) |> Array.split in
     let mangled_name = (match t with
-      | TCustom s_name -> mangle_method_name s_name name arg_ts
+      | TCustom s_name -> mangle_method_name s_name name arg_ts MangleDefault
       | _ -> raise (FatalError "method called on non-custom type") (* or maybe things can happen *)) in
 
     (* "expr" should be the first of the args if not static *)
@@ -89,13 +86,21 @@ let rec codegen_expr (e:expression) (state:PrgmSt.t) : Llvm.llvalue * typ =
     | Some this_expr -> PrgmSt.find_func state mangled_name, Array.append [| this_expr |] arg_exprs, Array.append [| t |] arg_ts
     | None -> PrgmSt.find_static state mangled_name, arg_exprs, arg_ts in
 
-    let func_type = arg_ts |> Array.map (fun a -> to_lltype a state) |> Llvm.function_type (to_lltype return_type state) in
-    let tmp_name = if return_type = TVoid then "" else "calltmp" in
-    Llvm.build_call func_type the_function arg_exprs tmp_name builder, return_type
+    codegen_call the_function arg_exprs arg_ts return_type state, return_type
     
   | ConstructorCall(t, args) ->
-    let llt = PrgmSt.find_type state (match t with TCustom(x) -> x | _ -> raise Unimplemented) in
-    Llvm.const_named_struct llt [||], t (* TODO: init correctly and actually call the constructor *)
+    let struct_data = PrgmSt.find_structdata state (match t with TCustom(x) -> x | _ -> raise Unimplemented) in
+    let struct_value = Llvm.const_named_struct struct_data.llt struct_data.initial_vals in (* would output a ptr to allocated object if this is a class constructor call not struc *)
+    (* Llvm.build_call a bunch of stuff from the abocve thing should be in its own function that can be called from here; *)
+    let arg_exprs, arg_ts = args |> Array.of_list |> Array.map (fun a -> codegen_expr a state) |> Array.split in (* TODO: STOP REPEATING THIS *)
+    let mangled_name = (match t with
+      | TCustom s_name -> mangle_method_name s_name s_name arg_ts MangleConstructor
+      | _ -> raise (FatalError "constructor called on non-custom type") (* this is bad because you can do things like new string() i think *)
+      ) in
+    let the_function, return_type = PrgmSt.find_func state mangled_name in (* TODO: If you cant find it dont make a call *)
+    codegen_call the_function arg_exprs arg_ts return_type state |> ignore;
+
+    struct_value, t (* TODO: init correctly and actually call the constructor *)
 
   | _ -> raise Unimplemented
 
@@ -130,7 +135,7 @@ and codegen_compare ~i ~f a b name state = (* me when i repeat myself *)
   | TInt, TInt -> i ea eb name builder
   | _ -> raise Unimplemented), TBool
 
-and codegen_ternary condition then_expr else_expr state = (* this file is getting a little ginormous *)
+and codegen_ternary condition then_expr else_expr state =
 let the_function = Llvm.block_parent (Llvm.insertion_block builder) in
 
 let cond_expr =
@@ -157,3 +162,9 @@ if else_t <> then_t then raise (CompileError "Type mismatch") else ();
 
 Llvm.position_at_end merge_block builder;
 Llvm.build_phi [(then_val, then_block); (else_val, else_block)] "terntmp" builder, then_t
+
+and codegen_call the_function arg_exprs arg_ts return_type state = (* more could be done here *)
+  let func_type = arg_ts |> Array.map (fun a -> to_lltype a state) |> Llvm.function_type (to_lltype return_type state) in
+  let tmp_name = if return_type = TVoid then "" else "calltmp" in
+  Llvm.build_call func_type the_function arg_exprs tmp_name builder
+

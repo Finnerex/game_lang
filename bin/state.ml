@@ -26,7 +26,7 @@ end
 
 (* i should only have to return the state if i want a parent function to know about a push or a pop *)
 module PrgmSt = struct
-  type structdata = { llt: Llvm.lltype; elements: (string, int * typ) Hashtbl.t } (* elements are name -> index, type *)
+  type structdata = { llt: Llvm.lltype; elements: (string, int * typ) Hashtbl.t; initial_vals: Llvm.llvalue array } (* elements are name -> index, type. probably add default values at some point *)
 
   type t =
   {
@@ -120,8 +120,11 @@ module PrgmSt = struct
   let get_loop_cont st = match st.loop_cont_block with Some b -> b | None -> raise InvalidState
 
   let has_type st name = Hashtbl.mem st.types name
-  let find_type st name = (Hashtbl.find st.types name).llt
-  let find_field st tyname fname = Hashtbl.find (Hashtbl.find st.types tyname).elements fname
+
+  let find_structdata st name = Hashtbl.find st.types name 
+  let find_type st name = (find_structdata st name).llt
+  let find_field st tyname fname = Hashtbl.find (find_structdata st tyname).elements fname
+
   let add_type st name ty = Hashtbl.replace st.types name ty
 
   let empty =

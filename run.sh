@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 
-dune exec game_lang test.txt output.ll &&
-llc -filetype=obj output.ll -o output.o &&
-clang output.o -o output &&
-./output &&
+project_path=test_project
+
+dune exec game_lang "$project_path/test.st" "$project_path/bin/output.ll" &&
+llc -filetype=obj "$project_path/bin/output.ll" -o "$project_path/bin/output.o" &&
+clang "$project_path/bin/output.o" -o "$project_path/bin/output" &&
+./$project_path/bin/output &&
 echo $?
